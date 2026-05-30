@@ -1,0 +1,49 @@
+# ─── Architecture ────────────────────────────────────────────────────────────
+# ESP32 → [MQTT port 1883] → mosquitto → subscriber → plant_data.db → streamlit
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Mosquitto MQTT Broker ──────────────────────────────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: plant_mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+    restart: unless-stopped
+
+  # ── Python MQTT Subscriber + SQLite Writer ─────────────────────────────────
+  subscriber:
+    build: .
+    container_name: plant_subscriber
+    command: python subscriber.py
+    depends_on:
+      - mosquitto
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - DB_PATH=/data/plant_data.db
+    volumes:
+      - db_data:/data
+    restart: unless-stopped
+
+  # ── Streamlit Dashboard ────────────────────────────────────────────────────
+  streamlit:
+    build: .
+    container_name: plant_dashboard
+    command: streamlit run streamlit_app.py --server.port 8501 --server.address 0.0.0.0
+    ports:
+      - "8501:8501"
+    environment:
+      - DB_PATH=/data/plant_data.db
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+    volumes:
+      - db_data:/data
+    restart: unless-stopped
+
+# ─── Shared Volume for SQLite Database ───────────────────────────────────────
+volumes:
+  db_data:
